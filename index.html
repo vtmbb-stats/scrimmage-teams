@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VT MBB Scrimmage Teams</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --maroon: #861F41;
+    --orange: #E5751F;
+    --bg: #f7f6f5;
+    --card: #ffffff;
+    --text: #1c1c1c;
+    --muted: #6b6b6b;
+    --border: #ddd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a;
+      --card: #232327;
+      --text: #f0f0f0;
+      --muted: #a0a0a0;
+      --border: #3a3a3f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 1.5rem;
+    max-width: 900px;
+    margin-inline: auto;
+  }
+  h1 {
+    color: var(--maroon);
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+  .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.9rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+  .card h2 {
+    font-size: 1rem;
+    margin: 0 0 0.75rem 0;
+    color: var(--maroon);
+  }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 0.6rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    resize: vertical;
+  }
+  .roster-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+  .roster-list label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0.3rem 0.7rem 0.3rem 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .roster-list input { accent-color: var(--maroon); }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: end;
+  }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; }
+  .field label { font-size: 0.85rem; color: var(--muted); }
+  input[type="number"] {
+    width: 90px;
+    padding: 0.45rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  button {
+    background: var(--maroon);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:hover { background: #6f1834; }
+  button.secondary {
+    background: transparent;
+    color: var(--maroon);
+    border: 1px solid var(--maroon);
+  }
+  button.secondary:hover { background: rgba(134,31,65,0.08); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .teams-output {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  .team-box {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: var(--bg);
+  }
+  .team-box h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    color: var(--orange);
+  }
+  .team-box ul { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+  .status { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; min-height: 1.2em; }
+  .history-list {
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+  }
+  .history-item {
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-item span.date { display: block; font-size: 0.75rem; }
+  .row-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
+</style>
+</head>
+<body>
+
+<h1>VT MBB Scrimmage Team Generator</h1>
+<div class="subtitle">Randomly builds scrimmage teams from today's available players, avoiding team combinations already used.</div>
+
+<div class="card">
+  <h2>Roster</h2>
+  <textarea id="rosterInput" placeholder="One player name per line"></textarea>
+  <div class="row-actions">
+    <button id="saveRosterBtn">Save Roster</button>
+    <span class="status" id="rosterStatus"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Who's here today?</h2>
+  <div class="roster-list" id="presentList"></div>
+  <div class="row-actions">
+    <button class="secondary" id="selectAllBtn">Select All</button>
+    <button class="secondary" id="selectNoneBtn">Select None</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Generate Teams</h2>
+  <div class="controls">
+    <div class="field">
+      <label for="teamSize">Players per team</label>
+      <input type="number" id="teamSize" value="5" min="1">
+    </div>
+    <button id="generateBtn">Generate Teams</button>
+  </div>
+  <div class="status" id="generateStatus"></div>
+  <div class="teams-output" id="teamsOutput"></div>
+</div>
+
+<div class="card">
+  <h2>Used Combinations (this browser)</h2>
+  <div class="row-actions">
+    <button class="secondary" id="clearHistoryBtn">Clear History</button>
+  </div>
+  <div class="history-list" id="historyList"></div>
+</div>
+
+<script>
+const ROSTER_KEY = 'vtmbb_scrimmage_roster';
+const HISTORY_KEY = 'vtmbb_scrimmage_history';
+
+function loadRoster() {
+  const raw = localStorage.getItem(ROSTER_KEY);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function saveRoster(names) {
+  localStorage.setItem(ROSTER_KEY, JSON.stringify(names));
+}
+
+function loadHistory() {
+  const raw = localStorage.getItem(HISTORY_KEY);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+function saveHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function canonicalTeam(names) {
+  return [...names].sort((a, b) => a.localeCompare(b)).join('|');
+}
+
+const rosterInput = document.getElementById('rosterInput');
+const rosterStatus = document.getElementById('rosterStatus');
+const presentList = document.getElementById('presentList');
+const teamSizeInput = document.getElementById('teamSize');
+const generateStatus = document.getElementById('generateStatus');
+const teamsOutput = document.getElementById('teamsOutput');
+const historyList = document.getElementById('historyList');
+
+let roster = loadRoster();
+let history = loadHistory();
+
+function renderRosterInput() {
+  rosterInput.value = roster.join('\n');
+}
+
+function renderPresentList() {
+  const previouslyChecked = new Set(
+    [...presentList.querySelectorAll('input:checked')].map(el => el.value)
+  );
+  presentList.innerHTML = '';
+  roster.forEach(name => {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = name;
+    checkbox.checked = previouslyChecked.size ? previouslyChecked.has(name) : true;
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode(name));
+    presentList.appendChild(label);
+  });
+}
+
+function renderHistory() {
+  historyList.innerHTML = '';
+  if (history.length === 0) {
+    historyList.innerHTML = '<div class="history-item">No combinations used yet.</div>';
+    return;
+  }
+  [...history].reverse().forEach(entry => {
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    const date = new Date(entry.timestamp).toLocaleString();
+    div.innerHTML = `<span class="date">${date}</span>${entry.teams.map(t => t.join(', ')).join('  —  ')}`;
+    historyList.appendChild(div);
+  });
+}
+
+document.getElementById('saveRosterBtn').addEventListener('click', () => {
+  const names = rosterInput.value
+    .split('\n')
+    .map(n => n.trim())
+    .filter(Boolean);
+  const unique = [...new Set(names)];
+  roster = unique;
+  saveRoster(roster);
+  renderPresentList();
+  rosterStatus.textContent = `Saved ${roster.length} player(s).`;
+  setTimeout(() => { rosterStatus.textContent = ''; }, 2500);
+});
+
+document.getElementById('selectAllBtn').addEventListener('click', () => {
+  presentList.querySelectorAll('input').forEach(el => el.checked = true);
+});
+
+document.getElementById('selectNoneBtn').addEventListener('click', () => {
+  presentList.querySelectorAll('input').forEach(el => el.checked = false);
+});
+
+document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+  if (!confirm('Clear all used-combination history?')) return;
+  history = [];
+  saveHistory(history);
+  renderHistory();
+});
+
+function shuffle(arr) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function splitIntoTeams(players, teamSize) {
+  const teams = [];
+  for (let i = 0; i < players.length; i += teamSize) {
+    teams.push(players.slice(i, i + teamSize));
+  }
+  return teams;
+}
+
+function combinationUsed(teams) {
+  const used = new Set(history.map(entry => canonicalTeam(entry.teams.flat())));
+  return teams.some(team => history.some(entry =>
+    entry.teams.some(usedTeam => canonicalTeam(usedTeam) === canonicalTeam(team))
+  ));
+}
+
+document.getElementById('generateBtn').addEventListener('click', () => {
+  const present = [...presentList.querySelectorAll('input:checked')].map(el => el.value);
+  const teamSize = parseInt(teamSizeInput.value, 10) || 5;
+
+  if (present.length < teamSize) {
+    generateStatus.textContent = `Need at least ${teamSize} players present to form a team.`;
+    teamsOutput.innerHTML = '';
+    return;
+  }
+
+  const MAX_ATTEMPTS = 300;
+  let attempt = 0;
+  let teams = null;
+  let anyRepeatAvoided = true;
+
+  while (attempt < MAX_ATTEMPTS) {
+    const shuffled = shuffle(present);
+    const candidate = splitIntoTeams(shuffled, teamSize);
+    if (!combinationUsed(candidate)) {
+      teams = candidate;
+      break;
+    }
+    attempt++;
+  }
+
+  if (!teams) {
+    teams = splitIntoTeams(shuffle(present), teamSize);
+    anyRepeatAvoided = false;
+  }
+
+  teamsOutput.innerHTML = '';
+  teams.forEach((team, idx) => {
+    const box = document.createElement('div');
+    box.className = 'team-box';
+    const isFull = team.length === teamSize;
+    box.innerHTML = `<h3>Team ${idx + 1}${isFull ? '' : ' (leftover)'}</h3><ul>${team.map(p => `<li>${p}</li>`).join('')}</ul>`;
+    teamsOutput.appendChild(box);
+  });
+
+  history.push({ timestamp: Date.now(), teams });
+  saveHistory(history);
+  renderHistory();
+
+  generateStatus.textContent = anyRepeatAvoided
+    ? `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`
+    : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider clearing history or changing team size.`;
+});
+
+renderRosterInput();
+renderPresentList();
+renderHistory();
+</script>
+
+</body>
+</html>
