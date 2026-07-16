@@ -150,6 +150,31 @@
   .history-item:last-child { border-bottom: none; }
   .history-item span.date { display: block; font-size: 0.75rem; }
   .row-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .two-col .field-block label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .two-col textarea { min-height: 260px; font-size: 0.85rem; }
+  .bench-tag {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-style: italic;
+  }
+  .sitting-out {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  @media (max-width: 640px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -159,7 +184,16 @@
 
 <div class="card">
   <h2>Roster</h2>
-  <textarea id="rosterInput" placeholder="One player name per line"></textarea>
+  <div class="two-col">
+    <div class="field-block">
+      <label for="displayOrderInput">Roster order (how players are listed top to bottom)</label>
+      <textarea id="displayOrderInput" placeholder="One player name per line"></textarea>
+    </div>
+    <div class="field-block">
+      <label for="depthChartInput">Depth chart order (used to pick starters when a team has more than 5)</label>
+      <textarea id="depthChartInput" placeholder="One player name per line"></textarea>
+    </div>
+  </div>
   <div class="row-actions">
     <button id="saveRosterBtn">Save Roster</button>
     <span class="status" id="rosterStatus"></span>
@@ -179,6 +213,10 @@
   <h2>Generate Teams</h2>
   <div class="controls">
     <div class="field">
+      <label for="numTeams">Number of teams</label>
+      <input type="number" id="numTeams" value="2" min="1">
+    </div>
+    <div class="field">
       <label for="teamSize">Players per team</label>
       <input type="number" id="teamSize" value="5" min="1">
     </div>
@@ -186,6 +224,7 @@
   </div>
   <div class="status" id="generateStatus"></div>
   <div class="teams-output" id="teamsOutput"></div>
+  <div class="sitting-out" id="sittingOutBox"></div>
 </div>
 
 <div class="card">
@@ -197,17 +236,37 @@
 </div>
 
 <script>
-const ROSTER_KEY = 'vtmbb_scrimmage_roster';
+const DISPLAY_ORDER_KEY = 'vtmbb_scrimmage_display_order';
+const DEPTH_CHART_KEY = 'vtmbb_scrimmage_depth_chart';
 const HISTORY_KEY = 'vtmbb_scrimmage_history';
 
-function loadRoster() {
-  const raw = localStorage.getItem(ROSTER_KEY);
-  if (!raw) return [];
-  try { return JSON.parse(raw); } catch { return []; }
+const DEFAULT_DISPLAY_ORDER = [
+  'Ben Hammond', 'Jaylen Curry', 'Ethan Copeland', 'James Caldarella',
+  'Isaiah Elohim', 'Ned Hull', 'Eltayeb Eltayeb', 'Tyler Johnson',
+  "Sin'Cere Jones", 'Kuol Atak', 'Amani Hansberry', 'Musa Sagnia',
+  'Solomon Davis', 'Miles Heide'
+];
+
+const DEFAULT_DEPTH_CHART_ORDER = [
+  'Amani Hansberry', 'Ben Hammond', 'Tyler Johnson', 'Isaiah Elohim',
+  'Kuol Atak', 'Miles Heide', 'Jaylen Curry', 'Ethan Copeland',
+  'Musa Sagnia', "Sin'Cere Jones", 'Solomon Davis', 'Ned Hull',
+  'Eltayeb Eltayeb', 'James Caldarella'
+];
+
+function loadList(key, fallback) {
+  const raw = localStorage.getItem(key);
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-function saveRoster(names) {
-  localStorage.setItem(ROSTER_KEY, JSON.stringify(names));
+function saveList(key, names) {
+  localStorage.setItem(key, JSON.stringify(names));
 }
 
 function loadHistory() {
@@ -224,19 +283,24 @@ function canonicalTeam(names) {
   return [...names].sort((a, b) => a.localeCompare(b)).join('|');
 }
 
-const rosterInput = document.getElementById('rosterInput');
+const displayOrderInput = document.getElementById('displayOrderInput');
+const depthChartInput = document.getElementById('depthChartInput');
 const rosterStatus = document.getElementById('rosterStatus');
 const presentList = document.getElementById('presentList');
+const numTeamsInput = document.getElementById('numTeams');
 const teamSizeInput = document.getElementById('teamSize');
 const generateStatus = document.getElementById('generateStatus');
 const teamsOutput = document.getElementById('teamsOutput');
+const sittingOutBox = document.getElementById('sittingOutBox');
 const historyList = document.getElementById('historyList');
 
-let roster = loadRoster();
+let displayOrder = loadList(DISPLAY_ORDER_KEY, DEFAULT_DISPLAY_ORDER);
+let depthChartOrder = loadList(DEPTH_CHART_KEY, DEFAULT_DEPTH_CHART_ORDER);
 let history = loadHistory();
 
-function renderRosterInput() {
-  rosterInput.value = roster.join('\n');
+function renderRosterInputs() {
+  displayOrderInput.value = displayOrder.join('\n');
+  depthChartInput.value = depthChartOrder.join('\n');
 }
 
 function renderPresentList() {
@@ -244,7 +308,7 @@ function renderPresentList() {
     [...presentList.querySelectorAll('input:checked')].map(el => el.value)
   );
   presentList.innerHTML = '';
-  roster.forEach(name => {
+  displayOrder.forEach(name => {
     const label = document.createElement('label');
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -271,16 +335,32 @@ function renderHistory() {
   });
 }
 
+function parseLines(textarea) {
+  return [...new Set(textarea.value.split('\n').map(n => n.trim()).filter(Boolean))];
+}
+
 document.getElementById('saveRosterBtn').addEventListener('click', () => {
-  const names = rosterInput.value
-    .split('\n')
-    .map(n => n.trim())
-    .filter(Boolean);
-  const unique = [...new Set(names)];
-  roster = unique;
-  saveRoster(roster);
+  const newDisplayOrder = parseLines(displayOrderInput);
+  const newDepthChartOrder = parseLines(depthChartInput);
+
+  const displaySet = new Set(newDisplayOrder);
+  const depthSet = new Set(newDepthChartOrder);
+  const sameSize = displaySet.size === depthSet.size;
+  const sameMembers = sameSize && [...displaySet].every(n => depthSet.has(n));
+
+  if (!sameMembers) {
+    rosterStatus.textContent = 'Roster order and depth chart order must contain the exact same players. Not saved.';
+    rosterStatus.style.color = '#c0392b';
+    return;
+  }
+
+  displayOrder = newDisplayOrder;
+  depthChartOrder = newDepthChartOrder;
+  saveList(DISPLAY_ORDER_KEY, displayOrder);
+  saveList(DEPTH_CHART_KEY, depthChartOrder);
   renderPresentList();
-  rosterStatus.textContent = `Saved ${roster.length} player(s).`;
+  rosterStatus.style.color = '';
+  rosterStatus.textContent = `Saved ${displayOrder.length} player(s).`;
   setTimeout(() => { rosterStatus.textContent = ''; }, 2500);
 });
 
@@ -308,70 +388,97 @@ function shuffle(arr) {
   return copy;
 }
 
-function splitIntoTeams(players, teamSize) {
+function splitIntoTeams(players, numTeams, teamSize) {
   const teams = [];
-  for (let i = 0; i < players.length; i += teamSize) {
-    teams.push(players.slice(i, i + teamSize));
+  for (let i = 0; i < numTeams; i++) {
+    teams.push(players.slice(i * teamSize, (i + 1) * teamSize));
   }
   return teams;
 }
 
 function combinationUsed(teams) {
-  const used = new Set(history.map(entry => canonicalTeam(entry.teams.flat())));
   return teams.some(team => history.some(entry =>
     entry.teams.some(usedTeam => canonicalTeam(usedTeam) === canonicalTeam(team))
   ));
 }
 
+function byOrderIndex(order) {
+  return (a, b) => order.indexOf(a) - order.indexOf(b);
+}
+
 document.getElementById('generateBtn').addEventListener('click', () => {
   const present = [...presentList.querySelectorAll('input:checked')].map(el => el.value);
+  const numTeams = parseInt(numTeamsInput.value, 10) || 1;
   const teamSize = parseInt(teamSizeInput.value, 10) || 5;
+  const totalNeeded = numTeams * teamSize;
 
-  if (present.length < teamSize) {
-    generateStatus.textContent = `Need at least ${teamSize} players present to form a team.`;
+  if (present.length < totalNeeded) {
+    generateStatus.textContent = `Need at least ${totalNeeded} players present (${numTeams} team(s) × ${teamSize}). Only ${present.length} checked.`;
     teamsOutput.innerHTML = '';
+    sittingOutBox.innerHTML = '';
     return;
   }
 
   const MAX_ATTEMPTS = 300;
   let attempt = 0;
   let teams = null;
-  let anyRepeatAvoided = true;
+  let sittingOut = [];
+  let repeatAvoided = true;
 
   while (attempt < MAX_ATTEMPTS) {
     const shuffled = shuffle(present);
-    const candidate = splitIntoTeams(shuffled, teamSize);
+    const inPlay = shuffled.slice(0, totalNeeded);
+    const candidate = splitIntoTeams(inPlay, numTeams, teamSize);
     if (!combinationUsed(candidate)) {
       teams = candidate;
+      sittingOut = shuffled.slice(totalNeeded);
       break;
     }
     attempt++;
   }
 
   if (!teams) {
-    teams = splitIntoTeams(shuffle(present), teamSize);
-    anyRepeatAvoided = false;
+    const shuffled = shuffle(present);
+    teams = splitIntoTeams(shuffled.slice(0, totalNeeded), numTeams, teamSize);
+    sittingOut = shuffled.slice(totalNeeded);
+    repeatAvoided = false;
   }
 
   teamsOutput.innerHTML = '';
   teams.forEach((team, idx) => {
     const box = document.createElement('div');
     box.className = 'team-box';
-    const isFull = team.length === teamSize;
-    box.innerHTML = `<h3>Team ${idx + 1}${isFull ? '' : ' (leftover)'}</h3><ul>${team.map(p => `<li>${p}</li>`).join('')}</ul>`;
+
+    let starters = new Set(team);
+    if (teamSize > 5) {
+      const byDepth = [...team].sort(byOrderIndex(depthChartOrder));
+      starters = new Set(byDepth.slice(0, 5));
+    }
+
+    const sortedForDisplay = [...team].sort(byOrderIndex(displayOrder));
+    const items = sortedForDisplay.map(p => {
+      const bench = teamSize > 5 && !starters.has(p);
+      return `<li>${p}${bench ? ' <span class="bench-tag">(bench)</span>' : ''}</li>`;
+    }).join('');
+
+    box.innerHTML = `<h3>Team ${idx + 1}</h3><ul>${items}</ul>`;
     teamsOutput.appendChild(box);
   });
+
+  sittingOutBox.innerHTML = sittingOut.length
+    ? `Sitting out: ${[...sittingOut].sort(byOrderIndex(displayOrder)).join(', ')}`
+    : '';
 
   history.push({ timestamp: Date.now(), teams });
   saveHistory(history);
   renderHistory();
 
-  generateStatus.textContent = anyRepeatAvoided
+  generateStatus.textContent = repeatAvoided
     ? `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`
-    : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider clearing history or changing team size.`;
+    : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider clearing history or changing team settings.`;
 });
 
-renderRosterInput();
+renderRosterInputs();
 renderPresentList();
 renderHistory();
 </script>
