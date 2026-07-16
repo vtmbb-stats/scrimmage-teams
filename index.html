@@ -7,8 +7,8 @@
 <style>
   :root {
     color-scheme: light dark;
-    --maroon: #861F41;
-    --orange: #E5751F;
+    --maroon: #630031;
+    --orange: #CF4420;
     --bg: #f7f6f5;
     --card: #ffffff;
     --text: #1c1c1c;
@@ -52,6 +52,14 @@
     margin: 0 0 0.75rem 0;
     color: var(--maroon);
   }
+  details.card summary {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--maroon);
+    cursor: pointer;
+  }
+  details.card[open] summary { margin-bottom: 0.75rem; }
+  details.card .two-col { margin-top: 0.75rem; }
   textarea {
     width: 100%;
     min-height: 140px;
@@ -110,7 +118,7 @@
     cursor: pointer;
     font-weight: 600;
   }
-  button:hover { background: #6f1834; }
+  button:hover { background: #82003f; }
   button.secondary {
     background: transparent;
     color: var(--maroon);
@@ -182,8 +190,8 @@
 <h1>VT MBB Scrimmage Team Generator</h1>
 <div class="subtitle">Randomly builds scrimmage teams from today's available players, avoiding team combinations already used.</div>
 
-<div class="card">
-  <h2>Roster</h2>
+<details class="card">
+  <summary>Edit roster (only needed if the roster changes)</summary>
   <div class="two-col">
     <div class="field-block">
       <label for="displayOrderInput">Roster order (how players are listed top to bottom)</label>
@@ -198,7 +206,7 @@
     <button id="saveRosterBtn">Save Roster</button>
     <span class="status" id="rosterStatus"></span>
   </div>
-</div>
+</details>
 
 <div class="card">
   <h2>Who's here today?</h2>
