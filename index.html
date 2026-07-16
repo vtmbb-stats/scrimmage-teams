@@ -188,12 +188,12 @@
     </div>
     <button id="generateBtn">Generate Teams</button>
   </div>
-  <label class="track-option">
-    <input type="checkbox" id="trackCombinationCheckbox" checked>
-    Remove this combination from the pool once generated
-  </label>
   <div class="status" id="generateStatus"></div>
   <div class="teams-output" id="teamsOutput"></div>
+  <label class="track-option" id="trackOptionRow" hidden>
+    <input type="checkbox" id="trackCombinationCheckbox" checked>
+    Remove this lineup from the pool (uncheck to leave it available)
+  </label>
   <div class="pair-history" id="pairHistoryBox"></div>
 </div>
 
@@ -258,12 +258,14 @@ function mergeSeedHistory(history) {
 const presentList = document.getElementById('presentList');
 const numTeamsInput = document.getElementById('numTeams');
 const teamSizeInput = document.getElementById('teamSize');
+const trackOptionRow = document.getElementById('trackOptionRow');
 const trackCombinationCheckbox = document.getElementById('trackCombinationCheckbox');
 const generateStatus = document.getElementById('generateStatus');
 const teamsOutput = document.getElementById('teamsOutput');
 const pairHistoryBox = document.getElementById('pairHistoryBox');
 
 let history = mergeSeedHistory(loadHistory());
+let lastGeneratedEntry = null;
 
 function renderPresentList() {
   const previouslyChecked = new Set(
@@ -421,14 +423,29 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     }).join('')
   }</ul>`;
 
-  if (trackCombinationCheckbox.checked) {
-    history.push({ timestamp: Date.now(), teamSize, teams });
-    saveHistory(history);
-  }
+  lastGeneratedEntry = { timestamp: Date.now(), teamSize, teams };
+  trackOptionRow.hidden = false;
+  trackCombinationCheckbox.checked = true;
+  history.push(lastGeneratedEntry);
+  saveHistory(history);
 
   generateStatus.textContent = repeatAvoided
     ? `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`
     : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider changing team settings.`;
+});
+
+trackCombinationCheckbox.addEventListener('change', () => {
+  if (!lastGeneratedEntry) return;
+  const idx = history.indexOf(lastGeneratedEntry);
+  if (trackCombinationCheckbox.checked) {
+    if (idx === -1) {
+      history.push(lastGeneratedEntry);
+      saveHistory(history);
+    }
+  } else if (idx !== -1) {
+    history.splice(idx, 1);
+    saveHistory(history);
+  }
 });
 
 renderPresentList();
