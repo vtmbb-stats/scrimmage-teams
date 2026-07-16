@@ -357,6 +357,9 @@ function satisfiesMatchupRules(teams) {
   // Solomon Davis and Miles Heide can never be on the same team.
   if (sameTeam('Solomon Davis', 'Miles Heide')) return false;
 
+  // Sin'Cere Jones and Kuol Atak can never start (be on the same team) together.
+  if (sameTeam("Sin'Cere Jones", 'Kuol Atak')) return false;
+
   // If Ethan Copeland and Jaylen Curry are together, Tyler Johnson must join them.
   if (sameTeam('Ethan Copeland', 'Jaylen Curry')) {
     if (teamOf.get('Tyler Johnson') !== teamOf.get('Jaylen Curry')) return false;
@@ -364,21 +367,12 @@ function satisfiesMatchupRules(teams) {
 
   // If Isaiah Elohim and Tyler Johnson are together, the counterweight pair
   // must both be on the other team: normally Eltayeb + Kuol, falling back to
-  // Sin'Cere if Eltayeb is out (absent or benched), then Ned if both
-  // Eltayeb and Sin'Cere are out.
+  // Ned if Eltayeb is out (absent or benched). Sin'Cere is never used here
+  // since Sin'Cere can't start alongside Kuol at all (see rule above).
   if (sameTeam('Isaiah Elohim', 'Tyler Johnson')) {
     const otherTeam = 1 - teamOf.get('Isaiah Elohim');
     const eltayebOut = isOut('Eltayeb Eltayeb');
-    const sinOut = isOut("Sin'Cere Jones");
-
-    let pair;
-    if (eltayebOut && sinOut) {
-      pair = ['Kuol Atak', 'Ned Hull'];
-    } else if (eltayebOut) {
-      pair = ['Kuol Atak', "Sin'Cere Jones"];
-    } else {
-      pair = ['Kuol Atak', 'Eltayeb Eltayeb'];
-    }
+    const pair = eltayebOut ? ['Kuol Atak', 'Ned Hull'] : ['Kuol Atak', 'Eltayeb Eltayeb'];
 
     // Only require players who are actually playing today.
     const enforceable = pair.filter(isPlaying);
