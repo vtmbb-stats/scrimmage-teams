@@ -407,11 +407,12 @@ document.getElementById('generateBtn').addEventListener('click', () => {
       starters = new Set(byDepth.slice(0, 5));
     }
 
-    const sortedForDisplay = [...team].sort(byOrderIndex(displayOrder));
-    const items = sortedForDisplay.map(p => {
-      const bench = team.length > 5 && !starters.has(p);
-      return `<li>${p}${bench ? ' <span class="bench-tag">(bench)</span>' : ''}</li>`;
-    }).join('');
+    const startersSorted = team.filter(p => starters.has(p)).sort(byOrderIndex(displayOrder));
+    const benchSorted = team.filter(p => !starters.has(p)).sort(byOrderIndex(displayOrder));
+    const items = [
+      ...startersSorted.map(p => `<li>${p}</li>`),
+      ...benchSorted.map(p => `<li>${p} <span class="bench-tag">(bench)</span></li>`)
+    ].join('');
 
     box.innerHTML = `<h3>Team ${idx + 1}</h3><ul>${items}</ul>`;
     teamsOutput.appendChild(box);
