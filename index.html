@@ -214,6 +214,45 @@ const depthChartOrder = [
   'Eltayeb Eltayeb', 'James Caldarella'
 ];
 
+// Positions (1=PG, 2=SG, 3=SF, 4=PF, 5=C) each player is eligible to fill.
+const POSITION_ELIGIBILITY = {
+  'Ben Hammond': [1],
+  'Jaylen Curry': [1],
+  'James Caldarella': [1, 2],
+  'Isaiah Elohim': [2, 3],
+  'Ethan Copeland': [2],
+  'Ned Hull': [2, 3],
+  'Tyler Johnson': [2, 3, 4],
+  'Eltayeb Eltayeb': [1, 2, 3],
+  'Amani Hansberry': [4, 5],
+  'Kuol Atak': [3, 4],
+  "Sin'Cere Jones": [3, 4],
+  'Miles Heide': [5],
+  'Solomon Davis': [5],
+  'Musa Sagnia': [4, 5],
+};
+
+// Bipartite matching (Kuhn's algorithm): can every player on this 5-man team
+// be assigned a distinct position (1-5) within their eligible set?
+function canFillAllPositions(team) {
+  const posToPlayer = {};
+
+  function tryAssign(player, visitedPositions) {
+    const eligible = POSITION_ELIGIBILITY[player] || [];
+    for (const pos of eligible) {
+      if (visitedPositions.has(pos)) continue;
+      visitedPositions.add(pos);
+      if (!(pos in posToPlayer) || tryAssign(posToPlayer[pos], visitedPositions)) {
+        posToPlayer[pos] = player;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return team.every(player => tryAssign(player, new Set()));
+}
+
 // Combinations already used before this tool existed, grouped by team size.
 // Add entries here (each an array of teams, each team an array of names) and
 // they'll be merged in silently so the generator won't repeat them.
@@ -412,6 +451,9 @@ function satisfiesMatchupRules(teams) {
     const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
     if (teamOf.get('James Caldarella') !== teamWithoutAnchor) return false;
   }
+
+  // Every team must be able to fill all 5 positions within players' eligibility.
+  if (!teams.every(canFillAllPositions)) return false;
 
   return true;
 }
