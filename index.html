@@ -133,6 +133,32 @@
     font-size: 0.8rem;
     font-style: italic;
   }
+  .track-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .track-option input { accent-color: var(--orange); }
+  .pair-history {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+  }
+  .pair-history h4 {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .pair-history ul {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--muted);
+  }
 </style>
 </head>
 <body>
@@ -162,8 +188,13 @@
     </div>
     <button id="generateBtn">Generate Teams</button>
   </div>
+  <label class="track-option">
+    <input type="checkbox" id="trackCombinationCheckbox" checked>
+    Remove this combination from the pool once generated
+  </label>
   <div class="status" id="generateStatus"></div>
   <div class="teams-output" id="teamsOutput"></div>
+  <div class="pair-history" id="pairHistoryBox"></div>
 </div>
 
 <script>
@@ -227,8 +258,10 @@ function mergeSeedHistory(history) {
 const presentList = document.getElementById('presentList');
 const numTeamsInput = document.getElementById('numTeams');
 const teamSizeInput = document.getElementById('teamSize');
+const trackCombinationCheckbox = document.getElementById('trackCombinationCheckbox');
 const generateStatus = document.getElementById('generateStatus');
 const teamsOutput = document.getElementById('teamsOutput');
+const pairHistoryBox = document.getElementById('pairHistoryBox');
 
 let history = mergeSeedHistory(loadHistory());
 
@@ -297,6 +330,33 @@ function byOrderIndex(order) {
   return (a, b) => order.indexOf(a) - order.indexOf(b);
 }
 
+function pairsInTeam(team) {
+  const pairs = [];
+  for (let i = 0; i < team.length; i++) {
+    for (let j = i + 1; j < team.length; j++) {
+      pairs.push([team[i], team[j]]);
+    }
+  }
+  return pairs;
+}
+
+function pairKey(a, b) {
+  return [a, b].sort((x, y) => x.localeCompare(y)).join(' & ');
+}
+
+function countPastPairOccurrences(historyEntries) {
+  const counts = new Map();
+  historyEntries.forEach(entry => {
+    entry.teams.forEach(team => {
+      pairsInTeam(team).forEach(([a, b]) => {
+        const key = pairKey(a, b);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+  });
+  return counts;
+}
+
 document.getElementById('generateBtn').addEventListener('click', () => {
   const present = [...presentList.querySelectorAll('input:checked')].map(el => el.value);
   const numTeams = parseInt(numTeamsInput.value, 10) || 1;
@@ -308,6 +368,8 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     teamsOutput.innerHTML = '';
     return;
   }
+
+  const pastPairCounts = countPastPairOccurrences(history);
 
   const MAX_ATTEMPTS = 300;
   let attempt = 0;
@@ -349,8 +411,20 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     teamsOutput.appendChild(box);
   });
 
-  history.push({ timestamp: Date.now(), teamSize, teams });
-  saveHistory(history);
+  const currentPairKeys = [...new Set(teams.flatMap(pairsInTeam).map(([a, b]) => pairKey(a, b)))]
+    .sort((a, b) => a.localeCompare(b));
+
+  pairHistoryBox.innerHTML = `<h4>Pairings in this lineup</h4><ul>${
+    currentPairKeys.map(key => {
+      const count = (pastPairCounts.get(key) || 0) + 1;
+      return `<li>${key}: ${count} time${count === 1 ? '' : 's'}</li>`;
+    }).join('')
+  }</ul>`;
+
+  if (trackCombinationCheckbox.checked) {
+    history.push({ timestamp: Date.now(), teamSize, teams });
+    saveHistory(history);
+  }
 
   generateStatus.textContent = repeatAvoided
     ? `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`
