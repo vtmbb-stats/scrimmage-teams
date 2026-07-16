@@ -321,6 +321,106 @@ function buildTeams(shuffledPresent, numTeams, teamSize) {
   return teams;
 }
 
+// James Caldarella is the lowest-ranked player on the depth chart, so he can
+// never win a top-5 spot on merit alone — when the "James must start" rule
+// applies, he needs to override the normal pecking order for that one team.
+function getStarters(team, forcedStarter) {
+  if (team.length <= 5) return new Set(team);
+  if (forcedStarter && team.includes(forcedStarter)) {
+    const rest = team.filter(p => p !== forcedStarter).sort(byOrderIndex(depthChartOrder));
+    return new Set([forcedStarter, ...rest.slice(0, 4)]);
+  }
+  const byDepth = [...team].sort(byOrderIndex(depthChartOrder));
+  return new Set(byDepth.slice(0, 5));
+}
+
+// If exactly one of Ben Hammond / Jaylen Curry is out, James Caldarella must
+// start for whichever team doesn't have the one who's present. Returns an
+// array parallel to `teams` with the forced-starter name for that team, or
+// null for teams with no override.
+function getForcedStarters(teams, present) {
+  const forced = teams.map(() => null);
+  const benOut = !present.includes('Ben Hammond');
+  const jaylenOut = !present.includes('Jaylen Curry');
+  if (benOut !== jaylenOut && present.includes('James Caldarella')) {
+    const teamOf = new Map();
+    teams.forEach((team, idx) => team.forEach(p => teamOf.set(p, idx)));
+    const presentAnchor = benOut ? 'Jaylen Curry' : 'Ben Hammond';
+    if (teamOf.has(presentAnchor)) {
+      const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
+      if (teamOf.get('James Caldarella') === teamWithoutAnchor) {
+        forced[teamWithoutAnchor] = 'James Caldarella';
+      }
+    }
+  }
+  return forced;
+}
+
+// Matchup rules specific to the classic "2 teams of 5" scrimmage setup.
+// Only meaningful when there are exactly 2 teams of exactly 5.
+function satisfiesMatchupRules(teams, present) {
+  const teamOf = new Map();
+  teams.forEach((team, idx) => team.forEach(p => teamOf.set(p, idx)));
+  const forcedStarters = getForcedStarters(teams, present);
+  const starterSets = teams.map((team, idx) => getStarters(team, forcedStarters[idx]));
+
+  const sameTeam = (a, b) => teamOf.has(a) && teamOf.has(b) && teamOf.get(a) === teamOf.get(b);
+  const isStarting = (name) => teamOf.has(name) && starterSets[teamOf.get(name)].has(name);
+  // "out" covers both not present at all, and present but benched.
+  const isOut = (name) => !present.includes(name) || !isStarting(name);
+
+  // Ben Hammond and Jaylen Curry can never be on the same team.
+  if (sameTeam('Ben Hammond', 'Jaylen Curry')) return false;
+
+  // Solomon Davis and Miles Heide can never be on the same team.
+  if (sameTeam('Solomon Davis', 'Miles Heide')) return false;
+
+  // If Ethan Copeland and Jaylen Curry are together, Tyler Johnson must join them.
+  if (sameTeam('Ethan Copeland', 'Jaylen Curry')) {
+    const teamIdx = teamOf.get('Jaylen Curry');
+    if (teamOf.get('Tyler Johnson') !== teamIdx) return false;
+  }
+
+  // If Isaiah Elohim and Tyler Johnson are together, the counterweight pair
+  // must both be on the other team: normally Eltayeb + Kuol, falling back to
+  // Sin'Cere if Eltayeb is out (absent or benched), then Ned if both
+  // Eltayeb and Sin'Cere are out.
+  if (sameTeam('Isaiah Elohim', 'Tyler Johnson')) {
+    const otherTeam = 1 - teamOf.get('Isaiah Elohim');
+    const eltayebOut = isOut('Eltayeb Eltayeb');
+    const sinOut = isOut("Sin'Cere Jones");
+
+    let pair;
+    if (eltayebOut && sinOut) {
+      pair = ['Kuol Atak', 'Ned Hull'];
+    } else if (eltayebOut) {
+      pair = ['Kuol Atak', "Sin'Cere Jones"];
+    } else {
+      pair = ['Kuol Atak', 'Eltayeb Eltayeb'];
+    }
+
+    // Only require players who are actually present today.
+    const enforceable = pair.filter(p => present.includes(p));
+    if (!enforceable.every(p => teamOf.get(p) === otherTeam)) return false;
+  }
+
+  // If exactly one of Ben Hammond / Jaylen Curry is out, James Caldarella
+  // must start for whichever team doesn't have the one who's in.
+  const benOut = !present.includes('Ben Hammond');
+  const jaylenOut = !present.includes('Jaylen Curry');
+  if (benOut !== jaylenOut && present.includes('James Caldarella')) {
+    const presentAnchor = benOut ? 'Jaylen Curry' : 'Ben Hammond';
+    if (teamOf.has(presentAnchor)) {
+      const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
+      if (teamOf.get('James Caldarella') !== teamWithoutAnchor || !isStarting('James Caldarella')) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 function combinationUsed(teams, teamSize) {
   return teams.some(team => history.some(entry =>
     entry.teamSize === teamSize &&
@@ -373,39 +473,55 @@ document.getElementById('generateBtn').addEventListener('click', () => {
 
   const pastPairCounts = countPastPairOccurrences(history);
 
+  // The matchup rules (Hammond/Curry, Isaiah/Tyler counterweight, etc.) only
+  // apply to the classic 2-teams-of-5 scrimmage setup.
+  const applyMatchupRules = teamSize === 5 && numTeams === 2;
+
   const MAX_ATTEMPTS = 300;
-  let attempt = 0;
-  let teams = null;
-  let poolWasReset = false;
-
-  while (attempt < MAX_ATTEMPTS) {
-    const candidate = buildTeams(shuffle(present), numTeams, teamSize);
-    if (!combinationUsed(candidate, teamSize)) {
-      teams = candidate;
-      break;
+  const findValid = (checkUsed) => {
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const candidate = buildTeams(shuffle(present), numTeams, teamSize);
+      if (applyMatchupRules && !satisfiesMatchupRules(candidate, present)) continue;
+      if (checkUsed && combinationUsed(candidate, teamSize)) continue;
+      return { candidate, attempts: i + 1 };
     }
-    attempt++;
-  }
+    return null;
+  };
 
-  if (!teams) {
+  let teams = null;
+  let attempt = 0;
+  let poolWasReset = false;
+  let rulesRelaxed = false;
+
+  let result = findValid(true);
+
+  if (!result) {
     // Every combination for this team size has been used — reset just that
     // size's pool so this team size can start a fresh no-repeat cycle.
     history = history.filter(entry => entry.teamSize !== teamSize);
     saveHistory(history);
-    teams = buildTeams(shuffle(present), numTeams, teamSize);
     poolWasReset = true;
+    result = findValid(false);
   }
+
+  if (result) {
+    teams = result.candidate;
+    attempt = result.attempts;
+  } else {
+    // The matchup rules can't be satisfied with today's attendance —
+    // fall back to an unconstrained lineup rather than freezing up.
+    teams = buildTeams(shuffle(present), numTeams, teamSize);
+    rulesRelaxed = true;
+  }
+
+  const forcedStarters = applyMatchupRules ? getForcedStarters(teams, present) : teams.map(() => null);
 
   teamsOutput.innerHTML = '';
   teams.forEach((team, idx) => {
     const box = document.createElement('div');
     box.className = 'team-box';
 
-    let starters = new Set(team);
-    if (team.length > 5) {
-      const byDepth = [...team].sort(byOrderIndex(depthChartOrder));
-      starters = new Set(byDepth.slice(0, 5));
-    }
+    const starters = getStarters(team, forcedStarters[idx]);
 
     const startersSorted = team.filter(p => starters.has(p)).sort(byOrderIndex(displayOrder));
     const benchSorted = team.filter(p => !starters.has(p)).sort(byOrderIndex(displayOrder));
@@ -419,7 +535,11 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   });
 
   const currentPairKeys = [...new Set(teams.flatMap(pairsInTeam).map(([a, b]) => pairKey(a, b)))]
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => {
+      const countA = (pastPairCounts.get(a) || 0) + 1;
+      const countB = (pastPairCounts.get(b) || 0) + 1;
+      return countB - countA || a.localeCompare(b);
+    });
 
   pairHistoryBox.innerHTML = `<h4>Pairings in this lineup</h4><ul>${
     currentPairKeys.map(key => {
@@ -434,9 +554,13 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   history.push(lastGeneratedEntry);
   saveHistory(history);
 
-  generateStatus.textContent = poolWasReset
-    ? `Every combination for ${teamSize}-player teams has been used — pool reset, starting a fresh cycle.`
-    : `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`;
+  if (rulesRelaxed) {
+    generateStatus.textContent = `Couldn't satisfy the matchup rules with today's attendance — showing an unconstrained lineup instead.`;
+  } else if (poolWasReset) {
+    generateStatus.textContent = `Every combination for ${teamSize}-player teams has been used — pool reset, starting a fresh cycle.`;
+  } else {
+    generateStatus.textContent = `Generated a new combination (tried ${attempt} shuffle${attempt === 1 ? '' : 's'}).`;
+  }
 });
 
 trackCombinationCheckbox.addEventListener('change', () => {
