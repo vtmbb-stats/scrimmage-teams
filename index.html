@@ -266,6 +266,28 @@ const pairHistoryBox = document.getElementById('pairHistoryBox');
 
 let history = mergeSeedHistory(loadHistory());
 let lastGeneratedEntry = null;
+let lastPastPairCounts = null;
+let lastPairKeys = null;
+
+// Re-renders the pair-frequency list using whether the current lineup is
+// actually marked as used (checkbox checked) or just being kept in the pool
+// (unchecked) — in the latter case its pairs shouldn't count toward "times
+// played together" since it isn't being recorded.
+function renderPairHistory() {
+  if (!lastPairKeys) return;
+  const bonus = trackCombinationCheckbox.checked ? 1 : 0;
+  const sortedKeys = [...lastPairKeys].sort((a, b) => {
+    const countA = (lastPastPairCounts.get(a) || 0) + bonus;
+    const countB = (lastPastPairCounts.get(b) || 0) + bonus;
+    return countB - countA || a.localeCompare(b);
+  });
+  pairHistoryBox.innerHTML = `<h4>Pairings in this lineup</h4><ul>${
+    sortedKeys.map(key => {
+      const count = (lastPastPairCounts.get(key) || 0) + bonus;
+      return `<li>${key}: ${count} time${count === 1 ? '' : 's'}</li>`;
+    }).join('')
+  }</ul>`;
+}
 
 function renderPresentList() {
   const previouslyChecked = new Set(
@@ -545,25 +567,15 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     teamsOutput.appendChild(box);
   });
 
-  const currentPairKeys = [...new Set(startingTeams.flatMap(pairsInTeam).map(([a, b]) => pairKey(a, b)))]
-    .sort((a, b) => {
-      const countA = (pastPairCounts.get(a) || 0) + 1;
-      const countB = (pastPairCounts.get(b) || 0) + 1;
-      return countB - countA || a.localeCompare(b);
-    });
-
-  pairHistoryBox.innerHTML = `<h4>Pairings in this lineup</h4><ul>${
-    currentPairKeys.map(key => {
-      const count = (pastPairCounts.get(key) || 0) + 1;
-      return `<li>${key}: ${count} time${count === 1 ? '' : 's'}</li>`;
-    }).join('')
-  }</ul>`;
+  lastPastPairCounts = pastPairCounts;
+  lastPairKeys = [...new Set(startingTeams.flatMap(pairsInTeam).map(([a, b]) => pairKey(a, b)))];
 
   lastGeneratedEntry = { timestamp: Date.now(), teamSize, teams: startingTeams };
   trackOptionRow.hidden = false;
   trackCombinationCheckbox.checked = true;
   history.push(lastGeneratedEntry);
   saveHistory(history);
+  renderPairHistory();
 
   if (rulesRelaxed) {
     generateStatus.textContent = `Couldn't satisfy the matchup rules with today's attendance — showing an unconstrained lineup instead.`;
@@ -586,6 +598,7 @@ trackCombinationCheckbox.addEventListener('change', () => {
     history.splice(idx, 1);
     saveHistory(history);
   }
+  renderPairHistory();
 });
 
 renderPresentList();
