@@ -35,7 +35,7 @@
     margin-inline: auto;
   }
   h1 {
-    color: var(--maroon);
+    color: var(--text);
     font-size: 1.5rem;
     margin-bottom: 0.25rem;
   }
@@ -50,7 +50,7 @@
   .card h2 {
     font-size: 1rem;
     margin: 0 0 0.75rem 0;
-    color: var(--maroon);
+    color: var(--text);
   }
   .roster-list {
     display: grid;
@@ -69,7 +69,7 @@
     cursor: pointer;
     user-select: none;
   }
-  .roster-list input { accent-color: var(--maroon); }
+  .roster-list input { accent-color: var(--orange); }
   @media (max-width: 480px) {
     .roster-list { grid-template-columns: 1fr; grid-auto-flow: row; }
   }
@@ -103,10 +103,10 @@
   button:hover { background: #82003f; }
   button.secondary {
     background: transparent;
-    color: var(--maroon);
-    border: 1px solid var(--maroon);
+    color: var(--text);
+    border: 1px solid var(--text);
   }
-  button.secondary:hover { background: rgba(134,31,65,0.08); }
+  button.secondary:hover { background: rgba(128,128,128,0.15); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .teams-output {
     display: grid;
@@ -132,11 +132,6 @@
     color: var(--muted);
     font-size: 0.8rem;
     font-style: italic;
-  }
-  .sitting-out {
-    margin-top: 0.75rem;
-    font-size: 0.9rem;
-    color: var(--muted);
   }
 </style>
 </head>
@@ -169,7 +164,6 @@
   </div>
   <div class="status" id="generateStatus"></div>
   <div class="teams-output" id="teamsOutput"></div>
-  <div class="sitting-out" id="sittingOutBox"></div>
 </div>
 
 <script>
@@ -235,7 +229,6 @@ const numTeamsInput = document.getElementById('numTeams');
 const teamSizeInput = document.getElementById('teamSize');
 const generateStatus = document.getElementById('generateStatus');
 const teamsOutput = document.getElementById('teamsOutput');
-const sittingOutBox = document.getElementById('sittingOutBox');
 
 let history = mergeSeedHistory(loadHistory());
 
@@ -282,6 +275,17 @@ function splitIntoTeams(players, numTeams, teamSize) {
   return teams;
 }
 
+// Everyone present gets placed on a team: the first numTeams*teamSize players
+// fill out even teams, then anyone left over is added as an extra bench spot,
+// one team at a time, so nobody is left unassigned.
+function buildTeams(shuffledPresent, numTeams, teamSize) {
+  const totalNeeded = numTeams * teamSize;
+  const teams = splitIntoTeams(shuffledPresent.slice(0, totalNeeded), numTeams, teamSize);
+  const extras = shuffledPresent.slice(totalNeeded);
+  extras.forEach((player, i) => teams[i % numTeams].push(player));
+  return teams;
+}
+
 function combinationUsed(teams, teamSize) {
   return teams.some(team => history.some(entry =>
     entry.teamSize === teamSize &&
@@ -302,32 +306,25 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   if (present.length < totalNeeded) {
     generateStatus.textContent = `Need at least ${totalNeeded} players present (${numTeams} team(s) × ${teamSize}). Only ${present.length} checked.`;
     teamsOutput.innerHTML = '';
-    sittingOutBox.innerHTML = '';
     return;
   }
 
   const MAX_ATTEMPTS = 300;
   let attempt = 0;
   let teams = null;
-  let sittingOut = [];
   let repeatAvoided = true;
 
   while (attempt < MAX_ATTEMPTS) {
-    const shuffled = shuffle(present);
-    const inPlay = shuffled.slice(0, totalNeeded);
-    const candidate = splitIntoTeams(inPlay, numTeams, teamSize);
+    const candidate = buildTeams(shuffle(present), numTeams, teamSize);
     if (!combinationUsed(candidate, teamSize)) {
       teams = candidate;
-      sittingOut = shuffled.slice(totalNeeded);
       break;
     }
     attempt++;
   }
 
   if (!teams) {
-    const shuffled = shuffle(present);
-    teams = splitIntoTeams(shuffled.slice(0, totalNeeded), numTeams, teamSize);
-    sittingOut = shuffled.slice(totalNeeded);
+    teams = buildTeams(shuffle(present), numTeams, teamSize);
     repeatAvoided = false;
   }
 
@@ -337,24 +334,20 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     box.className = 'team-box';
 
     let starters = new Set(team);
-    if (teamSize > 5) {
+    if (team.length > 5) {
       const byDepth = [...team].sort(byOrderIndex(depthChartOrder));
       starters = new Set(byDepth.slice(0, 5));
     }
 
     const sortedForDisplay = [...team].sort(byOrderIndex(displayOrder));
     const items = sortedForDisplay.map(p => {
-      const bench = teamSize > 5 && !starters.has(p);
+      const bench = team.length > 5 && !starters.has(p);
       return `<li>${p}${bench ? ' <span class="bench-tag">(bench)</span>' : ''}</li>`;
     }).join('');
 
     box.innerHTML = `<h3>Team ${idx + 1}</h3><ul>${items}</ul>`;
     teamsOutput.appendChild(box);
   });
-
-  sittingOutBox.innerHTML = sittingOut.length
-    ? `Sitting out: ${[...sittingOut].sort(byOrderIndex(displayOrder)).join(', ')}`
-    : '';
 
   history.push({ timestamp: Date.now(), teamSize, teams });
   saveHistory(history);
