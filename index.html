@@ -376,7 +376,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   const MAX_ATTEMPTS = 300;
   let attempt = 0;
   let teams = null;
-  let repeatAvoided = true;
+  let poolWasReset = false;
 
   while (attempt < MAX_ATTEMPTS) {
     const candidate = buildTeams(shuffle(present), numTeams, teamSize);
@@ -388,8 +388,12 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   }
 
   if (!teams) {
+    // Every combination for this team size has been used — reset just that
+    // size's pool so this team size can start a fresh no-repeat cycle.
+    history = history.filter(entry => entry.teamSize !== teamSize);
+    saveHistory(history);
     teams = buildTeams(shuffle(present), numTeams, teamSize);
-    repeatAvoided = false;
+    poolWasReset = true;
   }
 
   teamsOutput.innerHTML = '';
@@ -429,9 +433,9 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   history.push(lastGeneratedEntry);
   saveHistory(history);
 
-  generateStatus.textContent = repeatAvoided
-    ? `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`
-    : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider changing team settings.`;
+  generateStatus.textContent = poolWasReset
+    ? `Every combination for ${teamSize}-player teams has been used — pool reset, starting a fresh cycle.`
+    : `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`;
 });
 
 trackCombinationCheckbox.addEventListener('change', () => {
