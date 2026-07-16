@@ -52,45 +52,27 @@
     margin: 0 0 0.75rem 0;
     color: var(--maroon);
   }
-  details.card summary {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--maroon);
-    cursor: pointer;
-  }
-  details.card[open] summary { margin-bottom: 0.75rem; }
-  details.card .two-col { margin-top: 0.75rem; }
-  textarea {
-    width: 100%;
-    min-height: 140px;
-    font-family: inherit;
-    font-size: 0.95rem;
-    padding: 0.6rem;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text);
-    resize: vertical;
-  }
   .roster-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-flow: column;
+    gap: 0.5rem 2rem;
     margin-top: 0.75rem;
   }
   .roster-list label {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 0.3rem 0.7rem 0.3rem 0.5rem;
-    font-size: 0.9rem;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
     cursor: pointer;
     user-select: none;
   }
   .roster-list input { accent-color: var(--maroon); }
+  @media (max-width: 480px) {
+    .roster-list { grid-template-columns: 1fr; grid-auto-flow: row; }
+  }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -145,31 +127,7 @@
   }
   .team-box ul { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
   .status { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; min-height: 1.2em; }
-  .history-list {
-    max-height: 220px;
-    overflow-y: auto;
-    font-size: 0.85rem;
-  }
-  .history-item {
-    padding: 0.4rem 0;
-    border-bottom: 1px solid var(--border);
-    color: var(--muted);
-  }
-  .history-item:last-child { border-bottom: none; }
-  .history-item span.date { display: block; font-size: 0.75rem; }
   .row-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-  .two-col .field-block label {
-    font-size: 0.85rem;
-    color: var(--muted);
-    display: block;
-    margin-bottom: 0.3rem;
-  }
-  .two-col textarea { min-height: 260px; font-size: 0.85rem; }
   .bench-tag {
     color: var(--muted);
     font-size: 0.8rem;
@@ -180,33 +138,12 @@
     font-size: 0.9rem;
     color: var(--muted);
   }
-  @media (max-width: 640px) {
-    .two-col { grid-template-columns: 1fr; }
-  }
 </style>
 </head>
 <body>
 
 <h1>VT MBB Scrimmage Team Generator</h1>
 <div class="subtitle">Randomly builds scrimmage teams from today's available players, avoiding team combinations already used.</div>
-
-<details class="card">
-  <summary>Edit roster (only needed if the roster changes)</summary>
-  <div class="two-col">
-    <div class="field-block">
-      <label for="displayOrderInput">Roster order (how players are listed top to bottom)</label>
-      <textarea id="displayOrderInput" placeholder="One player name per line"></textarea>
-    </div>
-    <div class="field-block">
-      <label for="depthChartInput">Depth chart order (used to pick starters when a team has more than 5)</label>
-      <textarea id="depthChartInput" placeholder="One player name per line"></textarea>
-    </div>
-  </div>
-  <div class="row-actions">
-    <button id="saveRosterBtn">Save Roster</button>
-    <span class="status" id="rosterStatus"></span>
-  </div>
-</details>
 
 <div class="card">
   <h2>Who's here today?</h2>
@@ -235,47 +172,30 @@
   <div class="sitting-out" id="sittingOutBox"></div>
 </div>
 
-<div class="card">
-  <h2>Used Combinations (this browser)</h2>
-  <div class="row-actions">
-    <button class="secondary" id="clearHistoryBtn">Clear History</button>
-  </div>
-  <div class="history-list" id="historyList"></div>
-</div>
-
 <script>
-const DISPLAY_ORDER_KEY = 'vtmbb_scrimmage_display_order';
-const DEPTH_CHART_KEY = 'vtmbb_scrimmage_depth_chart';
 const HISTORY_KEY = 'vtmbb_scrimmage_history';
 
-const DEFAULT_DISPLAY_ORDER = [
+const displayOrder = [
   'Ben Hammond', 'Jaylen Curry', 'Ethan Copeland', 'James Caldarella',
   'Isaiah Elohim', 'Ned Hull', 'Eltayeb Eltayeb', 'Tyler Johnson',
   "Sin'Cere Jones", 'Kuol Atak', 'Amani Hansberry', 'Musa Sagnia',
   'Solomon Davis', 'Miles Heide'
 ];
 
-const DEFAULT_DEPTH_CHART_ORDER = [
+const depthChartOrder = [
   'Amani Hansberry', 'Ben Hammond', 'Tyler Johnson', 'Isaiah Elohim',
   'Kuol Atak', 'Miles Heide', 'Jaylen Curry', 'Ethan Copeland',
   'Musa Sagnia', "Sin'Cere Jones", 'Solomon Davis', 'Ned Hull',
   'Eltayeb Eltayeb', 'James Caldarella'
 ];
 
-function loadList(key, fallback) {
-  const raw = localStorage.getItem(key);
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveList(key, names) {
-  localStorage.setItem(key, JSON.stringify(names));
-}
+// Combinations already used before this tool existed, grouped by team size.
+// Add entries here (each an array of teams, each team an array of names) and
+// they'll be merged in silently so the generator won't repeat them.
+const SEED_HISTORY_BY_SIZE = {
+  5: [],
+  7: [],
+};
 
 function loadHistory() {
   const raw = localStorage.getItem(HISTORY_KEY);
@@ -291,31 +211,40 @@ function canonicalTeam(names) {
   return [...names].sort((a, b) => a.localeCompare(b)).join('|');
 }
 
-const displayOrderInput = document.getElementById('displayOrderInput');
-const depthChartInput = document.getElementById('depthChartInput');
-const rosterStatus = document.getElementById('rosterStatus');
+function mergeSeedHistory(history) {
+  let changed = false;
+  Object.entries(SEED_HISTORY_BY_SIZE).forEach(([teamSize, seedTeamsList]) => {
+    seedTeamsList.forEach(teams => {
+      const alreadyPresent = history.some(entry =>
+        entry.teamSize === Number(teamSize) &&
+        entry.teams.length === teams.length &&
+        entry.teams.every(t => teams.some(s => canonicalTeam(s) === canonicalTeam(t)))
+      );
+      if (!alreadyPresent) {
+        history.push({ timestamp: Date.now(), teamSize: Number(teamSize), teams });
+        changed = true;
+      }
+    });
+  });
+  if (changed) saveHistory(history);
+  return history;
+}
+
 const presentList = document.getElementById('presentList');
 const numTeamsInput = document.getElementById('numTeams');
 const teamSizeInput = document.getElementById('teamSize');
 const generateStatus = document.getElementById('generateStatus');
 const teamsOutput = document.getElementById('teamsOutput');
 const sittingOutBox = document.getElementById('sittingOutBox');
-const historyList = document.getElementById('historyList');
 
-let displayOrder = loadList(DISPLAY_ORDER_KEY, DEFAULT_DISPLAY_ORDER);
-let depthChartOrder = loadList(DEPTH_CHART_KEY, DEFAULT_DEPTH_CHART_ORDER);
-let history = loadHistory();
-
-function renderRosterInputs() {
-  displayOrderInput.value = displayOrder.join('\n');
-  depthChartInput.value = depthChartOrder.join('\n');
-}
+let history = mergeSeedHistory(loadHistory());
 
 function renderPresentList() {
   const previouslyChecked = new Set(
     [...presentList.querySelectorAll('input:checked')].map(el => el.value)
   );
   presentList.innerHTML = '';
+  presentList.style.gridTemplateRows = `repeat(${Math.ceil(displayOrder.length / 2)}, auto)`;
   displayOrder.forEach(name => {
     const label = document.createElement('label');
     const checkbox = document.createElement('input');
@@ -328,63 +257,12 @@ function renderPresentList() {
   });
 }
 
-function renderHistory() {
-  historyList.innerHTML = '';
-  if (history.length === 0) {
-    historyList.innerHTML = '<div class="history-item">No combinations used yet.</div>';
-    return;
-  }
-  [...history].reverse().forEach(entry => {
-    const div = document.createElement('div');
-    div.className = 'history-item';
-    const date = new Date(entry.timestamp).toLocaleString();
-    div.innerHTML = `<span class="date">${date}</span>${entry.teams.map(t => t.join(', ')).join('  —  ')}`;
-    historyList.appendChild(div);
-  });
-}
-
-function parseLines(textarea) {
-  return [...new Set(textarea.value.split('\n').map(n => n.trim()).filter(Boolean))];
-}
-
-document.getElementById('saveRosterBtn').addEventListener('click', () => {
-  const newDisplayOrder = parseLines(displayOrderInput);
-  const newDepthChartOrder = parseLines(depthChartInput);
-
-  const displaySet = new Set(newDisplayOrder);
-  const depthSet = new Set(newDepthChartOrder);
-  const sameSize = displaySet.size === depthSet.size;
-  const sameMembers = sameSize && [...displaySet].every(n => depthSet.has(n));
-
-  if (!sameMembers) {
-    rosterStatus.textContent = 'Roster order and depth chart order must contain the exact same players. Not saved.';
-    rosterStatus.style.color = '#c0392b';
-    return;
-  }
-
-  displayOrder = newDisplayOrder;
-  depthChartOrder = newDepthChartOrder;
-  saveList(DISPLAY_ORDER_KEY, displayOrder);
-  saveList(DEPTH_CHART_KEY, depthChartOrder);
-  renderPresentList();
-  rosterStatus.style.color = '';
-  rosterStatus.textContent = `Saved ${displayOrder.length} player(s).`;
-  setTimeout(() => { rosterStatus.textContent = ''; }, 2500);
-});
-
 document.getElementById('selectAllBtn').addEventListener('click', () => {
   presentList.querySelectorAll('input').forEach(el => el.checked = true);
 });
 
 document.getElementById('selectNoneBtn').addEventListener('click', () => {
   presentList.querySelectorAll('input').forEach(el => el.checked = false);
-});
-
-document.getElementById('clearHistoryBtn').addEventListener('click', () => {
-  if (!confirm('Clear all used-combination history?')) return;
-  history = [];
-  saveHistory(history);
-  renderHistory();
 });
 
 function shuffle(arr) {
@@ -404,8 +282,9 @@ function splitIntoTeams(players, numTeams, teamSize) {
   return teams;
 }
 
-function combinationUsed(teams) {
+function combinationUsed(teams, teamSize) {
   return teams.some(team => history.some(entry =>
+    entry.teamSize === teamSize &&
     entry.teams.some(usedTeam => canonicalTeam(usedTeam) === canonicalTeam(team))
   ));
 }
@@ -437,7 +316,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const shuffled = shuffle(present);
     const inPlay = shuffled.slice(0, totalNeeded);
     const candidate = splitIntoTeams(inPlay, numTeams, teamSize);
-    if (!combinationUsed(candidate)) {
+    if (!combinationUsed(candidate, teamSize)) {
       teams = candidate;
       sittingOut = shuffled.slice(totalNeeded);
       break;
@@ -477,18 +356,15 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     ? `Sitting out: ${[...sittingOut].sort(byOrderIndex(displayOrder)).join(', ')}`
     : '';
 
-  history.push({ timestamp: Date.now(), teams });
+  history.push({ timestamp: Date.now(), teamSize, teams });
   saveHistory(history);
-  renderHistory();
 
   generateStatus.textContent = repeatAvoided
     ? `Generated a new combination (tried ${attempt + 1} shuffle${attempt === 0 ? '' : 's'}).`
-    : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider clearing history or changing team settings.`;
+    : `Couldn't find an unused combination after ${MAX_ATTEMPTS} tries — showing best effort. Consider changing team settings.`;
 });
 
-renderRosterInputs();
 renderPresentList();
-renderHistory();
 </script>
 
 </body>
