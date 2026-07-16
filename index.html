@@ -321,53 +321,35 @@ function buildTeams(shuffledPresent, numTeams, teamSize) {
   return teams;
 }
 
-// James Caldarella is the lowest-ranked player on the depth chart, so he can
-// never win a top-5 spot on merit alone — when the "James must start" rule
-// applies, he needs to override the normal pecking order for that one team.
-function getStarters(team, forcedStarter) {
+// Depth-chart-based bench-priority order used specifically when making 2
+// teams of 5: James, then Eltayeb, then Solomon, then a random coin flip
+// between Ned and Sin'Cere, then the rest of the general depth chart as a
+// safety net. Filtered down to only players who are actually present, so
+// anyone already absent is automatically skipped ("moves the queue up").
+function getGlobalBenchPriority(present) {
+  const coinFlip = Math.random() < 0.5 ? ['Ned Hull', "Sin'Cere Jones"] : ["Sin'Cere Jones", 'Ned Hull'];
+  const special = ['James Caldarella', 'Eltayeb Eltayeb', 'Solomon Davis', ...coinFlip];
+  const rest = depthChartOrder.filter(p => !special.includes(p));
+  return [...special, ...rest].filter(p => present.includes(p));
+}
+
+function getStarters(team) {
   if (team.length <= 5) return new Set(team);
-  if (forcedStarter && team.includes(forcedStarter)) {
-    const rest = team.filter(p => p !== forcedStarter).sort(byOrderIndex(depthChartOrder));
-    return new Set([forcedStarter, ...rest.slice(0, 4)]);
-  }
   const byDepth = [...team].sort(byOrderIndex(depthChartOrder));
   return new Set(byDepth.slice(0, 5));
 }
 
-// If exactly one of Ben Hammond / Jaylen Curry is out, James Caldarella must
-// start for whichever team doesn't have the one who's present. Returns an
-// array parallel to `teams` with the forced-starter name for that team, or
-// null for teams with no override.
-function getForcedStarters(teams, present) {
-  const forced = teams.map(() => null);
-  const benOut = !present.includes('Ben Hammond');
-  const jaylenOut = !present.includes('Jaylen Curry');
-  if (benOut !== jaylenOut && present.includes('James Caldarella')) {
-    const teamOf = new Map();
-    teams.forEach((team, idx) => team.forEach(p => teamOf.set(p, idx)));
-    const presentAnchor = benOut ? 'Jaylen Curry' : 'Ben Hammond';
-    if (teamOf.has(presentAnchor)) {
-      const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
-      if (teamOf.get('James Caldarella') === teamWithoutAnchor) {
-        forced[teamWithoutAnchor] = 'James Caldarella';
-      }
-    }
-  }
-  return forced;
-}
-
 // Matchup rules specific to the classic "2 teams of 5" scrimmage setup.
-// Only meaningful when there are exactly 2 teams of exactly 5.
-function satisfiesMatchupRules(teams, present) {
+// `teams` here is always exactly [5 players, 5 players] — who's "out" is
+// simply whoever isn't in either team (decided earlier by the global bench
+// priority), since there's no per-team bench distinction at exactly 5-a-side.
+function satisfiesMatchupRules(teams) {
   const teamOf = new Map();
   teams.forEach((team, idx) => team.forEach(p => teamOf.set(p, idx)));
-  const forcedStarters = getForcedStarters(teams, present);
-  const starterSets = teams.map((team, idx) => getStarters(team, forcedStarters[idx]));
 
   const sameTeam = (a, b) => teamOf.has(a) && teamOf.has(b) && teamOf.get(a) === teamOf.get(b);
-  const isStarting = (name) => teamOf.has(name) && starterSets[teamOf.get(name)].has(name);
-  // "out" covers both not present at all, and present but benched.
-  const isOut = (name) => !present.includes(name) || !isStarting(name);
+  const isPlaying = (name) => teamOf.has(name);
+  const isOut = (name) => !isPlaying(name);
 
   // Ben Hammond and Jaylen Curry can never be on the same team.
   if (sameTeam('Ben Hammond', 'Jaylen Curry')) return false;
@@ -377,8 +359,7 @@ function satisfiesMatchupRules(teams, present) {
 
   // If Ethan Copeland and Jaylen Curry are together, Tyler Johnson must join them.
   if (sameTeam('Ethan Copeland', 'Jaylen Curry')) {
-    const teamIdx = teamOf.get('Jaylen Curry');
-    if (teamOf.get('Tyler Johnson') !== teamIdx) return false;
+    if (teamOf.get('Tyler Johnson') !== teamOf.get('Jaylen Curry')) return false;
   }
 
   // If Isaiah Elohim and Tyler Johnson are together, the counterweight pair
@@ -399,23 +380,21 @@ function satisfiesMatchupRules(teams, present) {
       pair = ['Kuol Atak', 'Eltayeb Eltayeb'];
     }
 
-    // Only require players who are actually present today.
-    const enforceable = pair.filter(p => present.includes(p));
+    // Only require players who are actually playing today.
+    const enforceable = pair.filter(isPlaying);
     if (!enforceable.every(p => teamOf.get(p) === otherTeam)) return false;
   }
 
   // If exactly one of Ben Hammond / Jaylen Curry is out, James Caldarella
-  // must start for whichever team doesn't have the one who's in.
-  const benOut = !present.includes('Ben Hammond');
-  const jaylenOut = !present.includes('Jaylen Curry');
-  if (benOut !== jaylenOut && present.includes('James Caldarella')) {
+  // must be on (and therefore start for) whichever team doesn't have the
+  // one who's playing. James is excluded from the bench pool ahead of time
+  // whenever this rule is active, so he's guaranteed to be playing here.
+  const benOut = isOut('Ben Hammond');
+  const jaylenOut = isOut('Jaylen Curry');
+  if (benOut !== jaylenOut && isPlaying('James Caldarella')) {
     const presentAnchor = benOut ? 'Jaylen Curry' : 'Ben Hammond';
-    if (teamOf.has(presentAnchor)) {
-      const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
-      if (teamOf.get('James Caldarella') !== teamWithoutAnchor || !isStarting('James Caldarella')) {
-        return false;
-      }
-    }
+    const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
+    if (teamOf.get('James Caldarella') !== teamWithoutAnchor) return false;
   }
 
   return true;
@@ -474,55 +453,93 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   const pastPairCounts = countPastPairOccurrences(history);
 
   // The matchup rules (Hammond/Curry, Isaiah/Tyler counterweight, etc.) only
-  // apply to the classic 2-teams-of-5 scrimmage setup.
+  // apply to the classic 2-teams-of-5 scrimmage setup. For that setup, who's
+  // playing at all is decided globally by depth chart first, then the
+  // playing group is split into teams under the matchup rules, and finally
+  // anyone left over is distributed across teams as bench. For any other
+  // team size, everyone present is assigned and extras ride bench per-team
+  // based on depth chart, as before.
   const applyMatchupRules = teamSize === 5 && numTeams === 2;
-
   const MAX_ATTEMPTS = 300;
-  const findValid = (checkUsed) => {
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      const candidate = buildTeams(shuffle(present), numTeams, teamSize);
-      if (applyMatchupRules && !satisfiesMatchupRules(candidate, present)) continue;
-      if (checkUsed && combinationUsed(candidate, teamSize)) continue;
-      return { candidate, attempts: i + 1 };
-    }
-    return null;
-  };
 
-  let teams = null;
+  let startingTeams = null;
+  let benchPlayers = [];
   let attempt = 0;
   let poolWasReset = false;
   let rulesRelaxed = false;
 
-  let result = findValid(true);
+  if (applyMatchupRules) {
+    const jamesRuleActive = (!present.includes('Ben Hammond')) !== (!present.includes('Jaylen Curry'))
+      && present.includes('James Caldarella');
+    let benchCandidates = getGlobalBenchPriority(present);
+    if (jamesRuleActive) {
+      benchCandidates = benchCandidates.filter(p => p !== 'James Caldarella');
+    }
+    const sitOutCount = present.length - totalNeeded;
+    benchPlayers = benchCandidates.slice(0, sitOutCount);
+    const playingPlayers = present.filter(p => !benchPlayers.includes(p));
 
-  if (!result) {
-    // Every combination for this team size has been used — reset just that
-    // size's pool so this team size can start a fresh no-repeat cycle.
-    history = history.filter(entry => entry.teamSize !== teamSize);
-    saveHistory(history);
-    poolWasReset = true;
-    result = findValid(false);
-  }
+    const findValid = (checkUsed) => {
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const candidate = splitIntoTeams(shuffle(playingPlayers), numTeams, teamSize);
+        if (!satisfiesMatchupRules(candidate)) continue;
+        if (checkUsed && combinationUsed(candidate, teamSize)) continue;
+        return { candidate, attempts: i + 1 };
+      }
+      return null;
+    };
 
-  if (result) {
-    teams = result.candidate;
-    attempt = result.attempts;
+    let result = findValid(true);
+    if (!result) {
+      history = history.filter(entry => entry.teamSize !== teamSize);
+      saveHistory(history);
+      poolWasReset = true;
+      result = findValid(false);
+    }
+
+    if (result) {
+      startingTeams = result.candidate;
+      attempt = result.attempts;
+    } else {
+      startingTeams = splitIntoTeams(shuffle(playingPlayers), numTeams, teamSize);
+      rulesRelaxed = true;
+    }
   } else {
-    // The matchup rules can't be satisfied with today's attendance —
-    // fall back to an unconstrained lineup rather than freezing up.
-    teams = buildTeams(shuffle(present), numTeams, teamSize);
-    rulesRelaxed = true;
+    const findValid = (checkUsed) => {
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const candidate = buildTeams(shuffle(present), numTeams, teamSize);
+        if (checkUsed && combinationUsed(candidate, teamSize)) continue;
+        return { candidate, attempts: i + 1 };
+      }
+      return null;
+    };
+
+    let result = findValid(true);
+    if (!result) {
+      history = history.filter(entry => entry.teamSize !== teamSize);
+      saveHistory(history);
+      poolWasReset = true;
+      result = findValid(false);
+    }
+    startingTeams = result.candidate;
+    attempt = result.attempts;
   }
 
-  const forcedStarters = applyMatchupRules ? getForcedStarters(teams, present) : teams.map(() => null);
+  // Build the display teams: the starting lineup plus any globally-benched
+  // players, distributed round-robin across teams.
+  const displayTeams = startingTeams.map(t => [...t]);
+  shuffle(benchPlayers).forEach((p, i) => displayTeams[i % numTeams].push(p));
+
+  const starterSets = applyMatchupRules
+    ? startingTeams.map(t => new Set(t))
+    : startingTeams.map(t => getStarters(t));
 
   teamsOutput.innerHTML = '';
-  teams.forEach((team, idx) => {
+  displayTeams.forEach((team, idx) => {
     const box = document.createElement('div');
     box.className = 'team-box';
 
-    const starters = getStarters(team, forcedStarters[idx]);
-
+    const starters = starterSets[idx];
     const startersSorted = team.filter(p => starters.has(p)).sort(byOrderIndex(displayOrder));
     const benchSorted = team.filter(p => !starters.has(p)).sort(byOrderIndex(displayOrder));
     const items = [
@@ -534,7 +551,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     teamsOutput.appendChild(box);
   });
 
-  const currentPairKeys = [...new Set(teams.flatMap(pairsInTeam).map(([a, b]) => pairKey(a, b)))]
+  const currentPairKeys = [...new Set(startingTeams.flatMap(pairsInTeam).map(([a, b]) => pairKey(a, b)))]
     .sort((a, b) => {
       const countA = (pastPairCounts.get(a) || 0) + 1;
       const countB = (pastPairCounts.get(b) || 0) + 1;
@@ -548,7 +565,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     }).join('')
   }</ul>`;
 
-  lastGeneratedEntry = { timestamp: Date.now(), teamSize, teams };
+  lastGeneratedEntry = { timestamp: Date.now(), teamSize, teams: startingTeams };
   trackOptionRow.hidden = false;
   trackCombinationCheckbox.checked = true;
   history.push(lastGeneratedEntry);
