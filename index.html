@@ -198,7 +198,9 @@
 </div>
 
 <script>
-const HISTORY_KEY = 'vtmbb_scrimmage_history';
+// Bump the version to clear every device's used lineups; old keys are removed.
+const HISTORY_KEY = 'vtmbb_scrimmage_history_v2';
+localStorage.removeItem('vtmbb_scrimmage_history');
 
 const displayOrder = [
   'Ben Hammond', 'Jaylen Curry', 'James Caldarella', 'Butta Johnson', 'Ethan Copeland',
