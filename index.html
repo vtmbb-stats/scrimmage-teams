@@ -201,17 +201,17 @@
 const HISTORY_KEY = 'vtmbb_scrimmage_history';
 
 const displayOrder = [
-  'Ben Hammond', 'Jaylen Curry', 'James Caldarella', 'Ethan Copeland',
+  'Ben Hammond', 'Jaylen Curry', 'James Caldarella', 'Butta Johnson', 'Ethan Copeland',
   'Isaiah Elohim', 'Ned Hull', 'Eltayeb Eltayeb', 'Tyler Johnson',
   'Kuol Atak', "Sin'Cere Jones", 'Amani Hansberry', 'Musa Sagnia',
   'Solomon Davis', 'Miles Heide'
 ];
 
 const depthChartOrder = [
-  'Amani Hansberry', 'Ben Hammond', 'Tyler Johnson', 'Isaiah Elohim',
-  'Kuol Atak', 'Miles Heide', 'Jaylen Curry', 'Ethan Copeland',
-  'Musa Sagnia', 'Ned Hull', "Sin'Cere Jones", 'Solomon Davis',
-  'Eltayeb Eltayeb', 'James Caldarella'
+  'Ben Hammond', 'Jaylen Curry', 'Butta Johnson', 'Isaiah Elohim',
+  'Tyler Johnson', 'Amani Hansberry', 'Musa Sagnia', 'Miles Heide',
+  'Ethan Copeland', 'Kuol Atak', "Sin'Cere Jones", 'Solomon Davis',
+  'Ned Hull', 'Eltayeb Eltayeb', 'James Caldarella'
 ];
 
 // Positions (1=PG, 2=SG, 3=SF, 4=PF, 5=C) each player is eligible to fill.
@@ -219,18 +219,28 @@ const POSITION_ELIGIBILITY = {
   'Ben Hammond': [1],
   'Jaylen Curry': [1],
   'James Caldarella': [1, 2],
+  'Butta Johnson': [1, 2, 3],
   'Isaiah Elohim': [2, 3],
   'Ethan Copeland': [2],
   'Ned Hull': [2, 3],
   'Tyler Johnson': [2, 3, 4],
-  'Eltayeb Eltayeb': [1, 2, 3],
+  'Eltayeb Eltayeb': [2, 3, 4],
   'Amani Hansberry': [4, 5],
-  'Kuol Atak': [3, 4],
+  'Kuol Atak': [4],
   "Sin'Cere Jones": [3, 4],
   'Miles Heide': [5],
   'Solomon Davis': [5],
   'Musa Sagnia': [4, 5],
 };
+
+// Butta Johnson can only play PG on a team without Ben Hammond or Jaylen Curry.
+function eligiblePositions(player, team) {
+  const eligible = POSITION_ELIGIBILITY[player] || [];
+  if (player === 'Butta Johnson' && (team.includes('Ben Hammond') || team.includes('Jaylen Curry'))) {
+    return eligible.filter(pos => pos !== 1);
+  }
+  return eligible;
+}
 
 // Bipartite matching (Kuhn's algorithm): can every player on this 5-man team
 // be assigned a distinct position (1-5) within their eligible set?
@@ -238,7 +248,7 @@ function canFillAllPositions(team) {
   const posToPlayer = {};
 
   function tryAssign(player, visitedPositions) {
-    const eligible = POSITION_ELIGIBILITY[player] || [];
+    const eligible = eligiblePositions(player, team);
     for (const pos of eligible) {
       if (visitedPositions.has(pos)) continue;
       visitedPositions.add(pos);
@@ -383,14 +393,18 @@ function buildTeams(shuffledPresent, numTeams, teamSize) {
 }
 
 // Depth-chart-based bench-priority order used specifically when making 2
-// teams of 5: James, then Eltayeb, then Solomon, then a random coin flip
-// between Ned and Sin'Cere, then the rest of the general depth chart as a
-// safety net. Filtered down to only players who are actually present, so
-// anyone already absent is automatically skipped ("moves the queue up").
+// teams of 5: the bench runs Solomon (first off the bench), then whichever of
+// Kuol/Sin'Cere loses a coin flip, then Ned, Eltayeb, James, so the sit-out
+// order is the reverse: James, Eltayeb, Ned, the coin-flip loser, Solomon.
+// The full-roster starters are therefore Ethan + Sin'Cere (Kuol sits) or
+// Ethan + Kuol (Sin'Cere sits). After that, the rest of the depth chart sits
+// from the bottom up as a safety net. Filtered down to only players who are
+// actually present, so anyone already absent is automatically skipped
+// ("moves the queue up").
 function getGlobalBenchPriority(present) {
-  const coinFlip = Math.random() < 0.5 ? ['Ned Hull', "Sin'Cere Jones"] : ["Sin'Cere Jones", 'Ned Hull'];
-  const special = ['James Caldarella', 'Eltayeb Eltayeb', 'Solomon Davis', ...coinFlip];
-  const rest = depthChartOrder.filter(p => !special.includes(p));
+  const coinFlipLoser = Math.random() < 0.5 ? 'Kuol Atak' : "Sin'Cere Jones";
+  const special = ['James Caldarella', 'Eltayeb Eltayeb', 'Ned Hull', coinFlipLoser, 'Solomon Davis'];
+  const rest = [...depthChartOrder].reverse().filter(p => !special.includes(p));
   return [...special, ...rest].filter(p => present.includes(p));
 }
 
@@ -418,44 +432,75 @@ function satisfiesMatchupRules(teams) {
   // Solomon Davis and Miles Heide can never be on the same team.
   if (sameTeam('Solomon Davis', 'Miles Heide')) return false;
 
-  // Sin'Cere Jones and Kuol Atak can never start (be on the same team) together.
-  if (sameTeam("Sin'Cere Jones", 'Kuol Atak')) return false;
-
   // If Ethan Copeland and Jaylen Curry are together, Tyler Johnson must join them.
   if (sameTeam('Ethan Copeland', 'Jaylen Curry')) {
     if (teamOf.get('Tyler Johnson') !== teamOf.get('Jaylen Curry')) return false;
   }
 
-  // If Isaiah Elohim and Tyler Johnson are together, the counterweight pair
-  // must both be on the other team: normally Eltayeb + Kuol, falling back to
-  // Ned if Eltayeb is out (absent or benched). Sin'Cere is never used here
-  // since Sin'Cere can't start alongside Kuol at all (see rule above).
-  if (sameTeam('Isaiah Elohim', 'Tyler Johnson')) {
-    const otherTeam = 1 - teamOf.get('Isaiah Elohim');
-    const eltayebOut = isOut('Eltayeb Eltayeb');
-    const pair = eltayebOut ? ['Kuol Atak', 'Ned Hull'] : ['Kuol Atak', 'Eltayeb Eltayeb'];
+  // Isaiah Elohim and Tyler Johnson can never be on the same team.
+  if (sameTeam('Isaiah Elohim', 'Tyler Johnson')) return false;
 
-    // Only require players who are actually playing today.
-    const enforceable = pair.filter(isPlaying);
-    if (!enforceable.every(p => teamOf.get(p) === otherTeam)) return false;
-  }
+  // Miles, Amani, Musa, and Solomon are split 2 and 2 (as evenly as possible
+  // if any of them aren't playing today).
+  const bigs = ['Miles Heide', 'Amani Hansberry', 'Musa Sagnia', 'Solomon Davis'].filter(isPlaying);
+  const bigsOnFirstTeam = bigs.filter(p => teamOf.get(p) === 0).length;
+  if (Math.abs(2 * bigsOnFirstTeam - bigs.length) > 1) return false;
 
-  // If exactly one of Ben Hammond / Jaylen Curry is out, James Caldarella
-  // must be on (and therefore start for) whichever team doesn't have the
-  // one who's playing. James is excluded from the bench pool ahead of time
+  // If exactly one of Ben Hammond / Jaylen Curry is out, Butta Johnson
+  // must be on (and play the 1 for) whichever team doesn't have the one
+  // who's playing. Butta is excluded from the bench pool ahead of time
   // whenever this rule is active, so he's guaranteed to be playing here.
   const benOut = isOut('Ben Hammond');
   const jaylenOut = isOut('Jaylen Curry');
-  if (benOut !== jaylenOut && isPlaying('James Caldarella')) {
+  if (benOut !== jaylenOut && isPlaying('Butta Johnson')) {
     const presentAnchor = benOut ? 'Jaylen Curry' : 'Ben Hammond';
     const teamWithoutAnchor = 1 - teamOf.get(presentAnchor);
-    if (teamOf.get('James Caldarella') !== teamWithoutAnchor) return false;
+    if (teamOf.get('Butta Johnson') !== teamWithoutAnchor) return false;
+  }
+
+  // If both Ben and Jaylen are out, Butta and James are the two PGs, one per
+  // team. Both are excluded from the bench pool ahead of time in that case.
+  if (benOut && jaylenOut && isPlaying('Butta Johnson') && isPlaying('James Caldarella')) {
+    if (sameTeam('Butta Johnson', 'James Caldarella')) return false;
   }
 
   // Every team must be able to fill all 5 positions within players' eligibility.
   if (!teams.every(canFillAllPositions)) return false;
 
   return true;
+}
+
+// Does any split of these 10 players into two teams of 5 pass the matchup rules?
+function anyValidSplit(players) {
+  const [first, ...others] = players;
+  const pick = (start, team) => {
+    if (team.length === 5) {
+      return satisfiesMatchupRules([team, players.filter(p => !team.includes(p))]);
+    }
+    for (let i = start; i < others.length; i++) {
+      if (pick(i + 1, [...team, others[i]])) return true;
+    }
+    return false;
+  };
+  return pick(0, [first]);
+}
+
+// Picks who sits: the first `count` players in bench-priority order, unless
+// that leaves no valid split (e.g. not enough PGs or wings). Then it tries the
+// next-best groups in priority order, keeping as many top-priority sitters as
+// possible. Falls back to the plain top `count` if nothing works.
+function chooseBench(candidates, present, count) {
+  const search = (start, chosen) => {
+    if (chosen.length === count) {
+      return anyValidSplit(present.filter(p => !chosen.includes(p))) ? chosen : null;
+    }
+    for (let i = start; i <= candidates.length - (count - chosen.length); i++) {
+      const found = search(i + 1, [...chosen, candidates[i]]);
+      if (found) return found;
+    }
+    return null;
+  };
+  return search(0, []) || candidates.slice(0, count);
 }
 
 function combinationUsed(teams, teamSize) {
@@ -510,7 +555,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
 
   const pastPairCounts = countPastPairOccurrences(history);
 
-  // The matchup rules (Hammond/Curry, Isaiah/Tyler counterweight, etc.) only
+  // The matchup rules (Hammond/Curry, Isaiah/Tyler, etc.) only
   // apply to the classic 2-teams-of-5 scrimmage setup. For that setup, who's
   // playing at all is decided globally by depth chart first, then the
   // playing group is split into teams under the matchup rules, and finally
@@ -527,14 +572,16 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   let rulesRelaxed = false;
 
   if (applyMatchupRules) {
-    const jamesRuleActive = (!present.includes('Ben Hammond')) !== (!present.includes('Jaylen Curry'))
-      && present.includes('James Caldarella');
+    const benOut = !present.includes('Ben Hammond');
+    const jaylenOut = !present.includes('Jaylen Curry');
     let benchCandidates = getGlobalBenchPriority(present);
-    if (jamesRuleActive) {
-      benchCandidates = benchCandidates.filter(p => p !== 'James Caldarella');
+    if (benOut !== jaylenOut) {
+      benchCandidates = benchCandidates.filter(p => p !== 'Butta Johnson');
+    } else if (benOut && jaylenOut) {
+      benchCandidates = benchCandidates.filter(p => p !== 'Butta Johnson' && p !== 'James Caldarella');
     }
     const sitOutCount = present.length - totalNeeded;
-    benchPlayers = benchCandidates.slice(0, sitOutCount);
+    benchPlayers = chooseBench(benchCandidates, present, sitOutCount);
     const playingPlayers = present.filter(p => !benchPlayers.includes(p));
 
     const findValid = (checkUsed) => {
